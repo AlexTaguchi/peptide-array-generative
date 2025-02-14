@@ -18,12 +18,16 @@ class ConditionedFFNN(nn.Module):
         """Simple feed-forward network with FiLM conditioning."""
         super(ConditionedFFNN, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.film = FiLM(condition_dim, hidden_dim)
+        self.film = FiLM(condition_dim + 1, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x, condition, t):
-        h = self.fc1(x)
-        gamma, beta = self.film(condition)
+        x_shape = x.shape
+        h = self.fc1(x.view(x_shape[0], -1))
+        gamma, beta = self.film(torch.cat((condition, t[:, None]), dim=1))
         h = gamma * h + beta
         h = torch.relu(h)
-        return self.fc2(h)
+        h = self.fc2(h)
+        h = h.view(*x_shape)
+        h = torch.softmax(h, dim=-1)
+        return h
