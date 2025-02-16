@@ -1,9 +1,6 @@
 # Import modules
-from peptide_array_generative.models import ConditionedFFNN
 import logging
-import math
-import matplotlib.pyplot as plt
-import numpy as np
+from peptide_array_generative.utils import plot_segmentation_maps
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,23 +10,40 @@ from tqdm import tqdm
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
 class MultinomialDiffusion(nn.Module):
-    def __init__(self, data_loader, num_steps, num_classes=20, device='cuda', schedule="linear"):
-        super().__init__()
-        self.data_loader = data_loader
-        self.num_classes = num_classes
-        self.num_steps = num_steps
-        self.device = device
-        self.beta = self.build_noise_schedule(schedule).to(device)
-        self.alpha = 1 - self.beta
-        self.alpha_bar = torch.cumprod(self.alpha, dim=0)
+    def __init__(self, data_loader, neural_network, noise_schedule, device=None):
+        """Initialize the MultinomialDiffusion class.
 
-        # Initialize U-Net model
-        self.model = ConditionedFFNN(
-            input_dim=2 * 28 * 28,
-            hidden_dim=512,
-            output_dim=2 * 28 * 28,
-            condition_dim=10,
-        ).to(device)
+        Args:
+            data_loader (torch.utils.data.DataLoader): Data loader for the dataset.
+            neural_network (torch.nn.Module): Model that predicts x_0 from x_t, t, and c.
+            noise_schedule (torch.nn.Module): Noise schedule for forward diffusion process.
+            device (str, optional): Device to run the model on. Defaults to None for automatic detection.
+        """
+        super().__init__()
+
+        # Set device
+        if device is None:
+            if torch.cuda.is_available():
+                self.device = 'cuda'
+            elif torch.backends.mps.is_available():
+                self.device = 'mps'
+            else:
+                self.device = 'cpu'
+        else:
+            self.device = device
+        
+        # Import data loader and determine number of categories
+        self.data_loader = data_loader
+        self.K = next(iter(data_loader))[0].shape[-1]
+
+        # Move model to device
+        self.model = neural_network.to(self.device)
+
+        # Build noise schedule
+        self.num_steps = noise_schedule.num_steps
+        self.betas = noise_schedule.betas.to(self.device)
+        self.alphas = noise_schedule.alphas.to(self.device)
+        self.alpha_bars = noise_schedule.alpha_bars.to(self.device)
     
     @staticmethod
     def sample(distribution):
@@ -82,10 +96,10 @@ class MultinomialDiffusion(nn.Module):
         Returns:
             theta:  Posterior probability at step t-1, (N, ..., K).
         """
-        alpha = self.alpha[t].view(-1, *([1] * (len(x_0.shape) - 1)))
-        alpha_bar = self.alpha_bar[t].view(-1, *([1] * (len(x_0.shape) - 1)))
-        theta_x_t = (alpha * x_t) + ((1 - alpha) / self.num_classes)
-        theta_x_0 = (alpha_bar * x_0) + ((1 - alpha_bar) / self.num_classes)
+        alphas = self.alphas[t].view(-1, *([1] * (len(x_0.shape) - 1)))
+        alpha_bars = self.alpha_bars[t].view(-1, *([1] * (len(x_0.shape) - 1)))
+        theta_x_t = (alphas * x_t) + ((1 - alphas) / self.K)
+        theta_x_0 = (alpha_bars * x_0) + ((1 - alpha_bars) / self.K)
         theta = theta_x_t * theta_x_0
         theta = theta / (theta.sum(dim=-1, keepdim=True) + 1e-8)
         return theta
@@ -135,8 +149,8 @@ class MultinomialDiffusion(nn.Module):
             q_t:    Noised probability distribution q(x_t | x_0), (N, ..., K).
             x_t:    Noised sample x_t, (N, ..., K).
         """
-        alpha_bar = self.alpha_bar[t].view(-1, *([1] * (len(x_0.shape) - 1)))
-        q_t = (alpha_bar * x_0) + ((1 - alpha_bar) / self.num_classes)
+        alpha_bars = self.alpha_bars[t].view(-1, *([1] * (len(x_0.shape) - 1)))
+        q_t = (alpha_bars * x_0) + ((1 - alpha_bars) / self.K)
         x_t = self.sample(q_t)
         return q_t, x_t
     
@@ -156,7 +170,13 @@ class MultinomialDiffusion(nn.Module):
         x_t_1 = self.sample(q_t_1)
         return q_t_1, x_t_1
 
-    def train(self, epochs=500, learning_rate=3e-4):
+    def train(self, epochs=100, learning_rate=1e-3):
+        """Train the model.
+
+        Args:
+            epochs (int, optional): Number of epochs to train the model. Defaults to 100.
+            learning_rate (float, optional): Learning rate for the optimizer. Defaults to 1e-3.
+        """
         # Set optimizer and CrossEntropyLoss
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
         criterion = nn.KLDivLoss(reduction='batchmean')
@@ -191,42 +211,14 @@ class MultinomialDiffusion(nn.Module):
                 # Report loss
                 progress_bar.set_postfix(loss=loss.item())
 
-            # Save samples and model checkpoints at regular intervals
+            # Save samples at regular intervals
             epoch_id = str(epoch).zfill(len(str(epochs)))
             if epoch_id[-1] == '0':
-                # Sample from model
                 with torch.no_grad():
-                    x_t = (torch.ones_like(x_0) / self.num_classes)[:10].to(self.device)
+                    x_t = (torch.ones_like(x_0) / self.K)[:10].to(self.device)
                     c = torch.eye(10).to(self.device)
                     samples = self.generate(x_t, c)
-                
-                # Plot samples
-                rows = math.ceil(samples.shape[0] / 8)
-                fig, axes = plt.subplots(rows, 8, figsize=(8, rows))
-                
-                # Get number of classes from last dimension
-                num_classes = samples.shape[-1]
-
-                # Get colormap with enough colors for all classes
-                cmap = plt.cm.get_cmap('tab20')
-
-                for i in range(samples.shape[0]):
-                    # Create visualization using all feature channels
-                    img = samples[i].cpu().numpy()  # Shape: (32, 32, num_classes)
-                    
-                    # Create weighted color map using all channels
-                    colored_map = np.zeros((img.shape[0], img.shape[1], 4))
-                    for j in range(num_classes):
-                        color = np.array(cmap(j/num_classes))
-                        colored_map += img[:,:,j][...,None] * color
-                    
-                    # Plot with automatic colormap
-                    axes[i//8, i%8].imshow(colored_map)
-                    axes[i//8, i%8].axis("off")
-
-                plt.tight_layout()
-                plt.savefig(f'results/samples_{epoch_id}.png')
-                plt.close(fig)
+                plot_segmentation_maps(samples, c, f'results/epoch_{epoch_id}.png')
     
 if __name__ == '__main__':
     pass

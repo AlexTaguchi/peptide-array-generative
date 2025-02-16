@@ -13,10 +13,10 @@ class FiLM(nn.Module):
         beta = self.beta_layer(condition)    # Shifting factors
         return gamma, beta
 
-class ConditionedFFNN(nn.Module):
+class FiLMNet(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, condition_dim):
         """Simple feed-forward network with FiLM conditioning."""
-        super(ConditionedFFNN, self).__init__()
+        super(FiLMNet, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.film = FiLM(condition_dim + 1, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)

@@ -2,36 +2,26 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
 import numpy as np
+import os
 
-class BinarizedMNIST(datasets.MNIST):
+class MNISTBinary(datasets.MNIST):
     """Custom MNIST dataset that dynamically binarizes images and one-hot encodes labels."""
-    
-    def __init__(self, root, train=True, transform=None, download=True, threshold=0.2):
-        super().__init__(root, train=train, transform=transform, download=download)
-        self.threshold = threshold
-        self.num_classes = 10  # MNIST has 10 classes (digits 0-9)
+
+    def __init__(self, train=True):
+        super().__init__(
+            root=os.path.join(os.path.dirname(__file__), '../data'),
+            train=train,
+            transform=transforms.Compose([transforms.ToTensor()]),
+            download=True
+        )
 
     def __getitem__(self, index):
         """Overrides MNIST __getitem__ to return a binarized one-hot encoded image and one-hot encoded label."""
-        img, label = super().__getitem__(index)  # Get original image and label
-        img = img > self.threshold  # Binarization (boolean mask)
-        img = torch.nn.functional.one_hot(img.long(), num_classes=2).squeeze(0).float()  # One-hot encode image
-
-        label = torch.nn.functional.one_hot(torch.tensor(label), num_classes=self.num_classes).float()  # One-hot encode label
-
-        return img, label
-
-def get_mnist_dataloader(batch_size=128):
-    """Returns DataLoader for dynamically binarized MNIST with one-hot encoded labels."""
-    transform = transforms.Compose([transforms.ToTensor()])
-
-    train_dataset = BinarizedMNIST(root="./data", train=True, transform=transform, download=True)
-    test_dataset = BinarizedMNIST(root="./data", train=False, transform=transform, download=True)
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    return train_loader, test_loader
+        data, label = super().__getitem__(index)
+        data = data > 0.2
+        data = torch.stack([data, ~data], dim=-1).squeeze().long()
+        label = torch.nn.functional.one_hot(torch.tensor(label), num_classes=10)
+        return data, label
 
 class PeptideDataset(Dataset):
     def __init__(self, data_file, label_file, max_seq_len, amino_acid_vocab='ACDEFGHIKLMNPQRSTVWY-', transform=None):
