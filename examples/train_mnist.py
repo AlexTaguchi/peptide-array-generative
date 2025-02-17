@@ -4,7 +4,7 @@ sys.path.append('..')
 # Import modules
 from peptide_array_generative.diffusion import MultinomialDiffusion
 from peptide_array_generative.schedules import CosineSchedule
-from peptide_array_generative.models import FiLMNet
+from peptide_array_generative.models.unet import UNet
 from peptide_array_generative.dataset import MNISTBinary
 from peptide_array_generative.utils import plot_segmentation_maps
 from torch.utils.data import DataLoader
@@ -19,11 +19,10 @@ inputs, labels = next(iter(data_loader))
 plot_segmentation_maps(inputs, labels, 'results/mnist_binary.png')
 
 # Set neural network
-neural_network = FiLMNet(
-    input_dim=2 * 28 * 28,
-    hidden_dim=512,
-    output_dim=2 * 28 * 28,
-    condition_dim=10,
+neural_network = UNet(
+    channels=2,
+    time_embedding_dim=256,
+    conditional_dim=10
 )
 
 # Set noise schedule

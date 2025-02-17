@@ -21,10 +21,10 @@ class FiLMNet(nn.Module):
         self.film = FiLM(condition_dim + 1, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
 
-    def forward(self, x, condition, t):
+    def forward(self, x, t, y):
         x_shape = x.shape
         h = self.fc1(x.view(x_shape[0], -1))
-        gamma, beta = self.film(torch.cat((condition, t[:, None]), dim=1))
+        gamma, beta = self.film(torch.cat((y, t[:, None]), dim=1))
         h = gamma * h + beta
         h = torch.relu(h)
         h = self.fc2(h)

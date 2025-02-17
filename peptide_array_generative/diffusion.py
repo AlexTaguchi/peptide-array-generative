@@ -125,7 +125,7 @@ class MultinomialDiffusion(nn.Module):
                 timesteps = torch.ones(c.shape[0], device=self.device).long() * t
                 
                 # Get model prediction of x_0
-                x_0_pred = self.model(x_t, c, timesteps)
+                x_0_pred = self.model(x_t, timesteps, c)
 
                 # Calculate posterior distribution
                 q_posterior = self.calculate_posterior(x_t, x_0_pred, timesteps)
@@ -192,7 +192,7 @@ class MultinomialDiffusion(nn.Module):
                 c = labels.to(self.device).float()
                 t = torch.randint(low=1, high=self.num_steps, size=(data.shape[0],)).to(self.device)
                 _, x_t = self.noise(x_0, t)
-                x_0_pred = self.model(x_t, c, t)
+                x_0_pred = self.model(x_t, t, c)
 
                 # Calculate true posterior q(x_{t-1} | x_t, x_0)
                 q_posterior = self.calculate_posterior(x_t, x_0, t)
