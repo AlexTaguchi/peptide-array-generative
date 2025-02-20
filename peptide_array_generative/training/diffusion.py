@@ -1,4 +1,5 @@
 # Import modules
+import matplotlib.pyplot as plt
 import logging
 from peptide_array_generative.utils import plot_segmentation_maps
 import torch
@@ -170,16 +171,18 @@ class MultinomialDiffusion(nn.Module):
         x_t_1 = self.sample(q_t_1)
         return q_t_1, x_t_1
 
-    def train(self, epochs=100, learning_rate=1e-3):
+    def train(self, epochs=10, learning_rate=1e-3, validation_model=None):
         """Train the model.
 
         Args:
             epochs (int, optional): Number of epochs to train the model. Defaults to 100.
             learning_rate (float, optional): Learning rate for the optimizer. Defaults to 1e-3.
+            validation_model (torch.nn.Module, optional): Model to validate on. Defaults to None.
         """
         # Set optimizer and CrossEntropyLoss
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
-        criterion = nn.KLDivLoss(reduction='batchmean')
+        criterion_train = nn.KLDivLoss(reduction='batchmean')
+        criterion_test = nn.MSELoss()
 
         for epoch in range(epochs + 1):
             logging.info(f'Epoch {epoch}')
@@ -201,7 +204,7 @@ class MultinomialDiffusion(nn.Module):
                 p_posterior = self.calculate_posterior(x_t, x_0_pred, t)
                 
                 # Compute KL divergence loss
-                loss = criterion(p_posterior.log(), q_posterior)
+                loss = criterion_train(p_posterior.log(), q_posterior)
                 
                 # Optimize
                 optimizer.zero_grad()
@@ -211,14 +214,34 @@ class MultinomialDiffusion(nn.Module):
                 # Report loss
                 progress_bar.set_postfix(loss=loss.item())
 
-            # Save samples at regular intervals
-            epoch_id = str(epoch).zfill(len(str(epochs)))
-            if epoch_id[-1] == '0':
+            # # Save samples at regular intervals
+            # epoch_id = str(epoch).zfill(len(str(epochs)))
+            # if epoch_id[-1] == '0':
+            #     with torch.no_grad():
+            #         x_t = (torch.ones_like(x_0) / self.K)[:10].to(self.device)
+            #         c = torch.eye(10).to(self.device)
+            #         samples = self.generate(x_t, c)
+            #     plot_segmentation_maps(samples, c, f'results/epoch_{epoch_id}.png')
+
+            # Validate generated samples with model
+            if validation_model is not None:
                 with torch.no_grad():
-                    x_t = (torch.ones_like(x_0) / self.K)[:10].to(self.device)
-                    c = torch.eye(10).to(self.device)
+                    x_t = (torch.ones(1000, *x_0.shape[1:]) / self.K).to(self.device)
+                    c = (2 * torch.rand(1000, c.shape[1]) + 2).to(self.device)
                     samples = self.generate(x_t, c)
-                plot_segmentation_maps(samples, c, f'results/epoch_{epoch_id}.png')
+                    max_indices = torch.argmax(samples, dim=-1)
+                    samples_one_hot = torch.nn.functional.one_hot(max_indices, num_classes=samples.shape[-1]).float()
+                    c_pred = validation_model(samples_one_hot)
+                    loss = criterion_test(c_pred, c)
+                    logging.info(f'Validation loss: {loss.item():.5f}')
+
+                    x_plot = c.flatten().cpu().numpy()
+                    y_plot = c_pred.flatten().cpu().numpy()
+                    plt.scatter(x_plot, y_plot)
+                    plt.xlabel('Desired Binding')
+                    plt.ylabel('Generated Binding')
+                    plt.savefig('peptide_array_diffusion.png', dpi=300)
+                    plt.close()
     
 if __name__ == '__main__':
     pass

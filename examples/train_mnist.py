@@ -5,7 +5,7 @@ sys.path.append('..')
 from peptide_array_generative.datasets.mnist import MNISTCategorical
 from peptide_array_generative.models.unet import UNet
 from peptide_array_generative.schedules import CosineSchedule
-from peptide_array_generative.diffusion import MultinomialDiffusion
+from peptide_array_generative.training.diffusion import MultinomialDiffusion
 from peptide_array_generative.utils import plot_segmentation_maps
 from torch.utils.data import DataLoader
 
