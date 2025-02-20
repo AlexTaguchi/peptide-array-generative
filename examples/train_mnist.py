@@ -2,21 +2,21 @@ import sys
 sys.path.append('..')
 
 # Import modules
-from peptide_array_generative.diffusion import MultinomialDiffusion
-from peptide_array_generative.schedules import CosineSchedule
+from peptide_array_generative.datasets.mnist import MNISTCategorical
 from peptide_array_generative.models.unet import UNet
-from peptide_array_generative.dataset import MNISTBinary
+from peptide_array_generative.schedules import CosineSchedule
+from peptide_array_generative.diffusion import MultinomialDiffusion
 from peptide_array_generative.utils import plot_segmentation_maps
 from torch.utils.data import DataLoader
 
 # Set data loader
 data_loader = DataLoader(
-    MNISTBinary(train=False),
+    MNISTCategorical(train=False),
     batch_size=16,
     shuffle=True
 )
 inputs, labels = next(iter(data_loader))
-plot_segmentation_maps(inputs, labels, 'results/mnist_binary.png')
+plot_segmentation_maps(inputs, labels, 'results/mnist_categorical.png')
 
 # Set neural network
 neural_network = UNet(
