@@ -4,9 +4,9 @@ sys.path.append('..')
 # Import modules
 from peptide_array_generative.datasets.mnist import MNISTCategorical
 from peptide_array_generative.models.unet import UNet
-from peptide_array_generative.schedules import CosineSchedule
-from peptide_array_generative.training.diffusion import MultinomialDiffusion
-from peptide_array_generative.utils import plot_segmentation_maps
+from peptide_array_generative.diffusion.schedules import CosineSchedule
+from peptide_array_generative.diffusion.categorical import MultinomialDiffusion
+from peptide_array_generative.utils.plotting import plot_segmentation_maps
 from torch.utils.data import DataLoader
 
 # Set data loader
